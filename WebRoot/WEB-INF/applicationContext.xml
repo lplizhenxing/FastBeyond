@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans  xmlns="http://www.springframework.org/schema/beans"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:p="http://www.springframework.org/schema/p"
+    xmlns:context="http://www.springframework.org/schema/context"
+    xmlns:aop="http://www.springframework.org/schema/aop"
+    xmlns:tx="http://www.springframework.org/schema/tx" 
+    xmlns:task="http://www.springframework.org/schema/task"
+    xsi:schemaLocation="
+        http://www.springframework.org/schema/beans 
+        http://www.springframework.org/schema/beans/spring-beans-4.0.xsd
+        http://www.springframework.org/schema/context 
+        http://www.springframework.org/schema/context/spring-context-4.0.xsd
+        http://www.springframework.org/schema/aop
+        http://www.springframework.org/schema/aop/spring-aop-4.0.xsd
+        http://www.springframework.org/schema/tx
+        http://www.springframework.org/schema/tx/spring-tx-4.0.xsd
+        http://www.springframework.org/schema/task
+        http://www.springframework.org/schema/task/spring-task-4.0.xsd
+        http://www.springframework.org/schema/cache http://www.springframework.org/schema/cache/spring-cache-4.0.xsd"
+ 		default-autowire="byName">
+ 	
+	<context:property-placeholder location="classpath:database.properties"/>
+	
+	<!-- 声明数据源头 -->
+	<bean id="dataSourceBean" class="org.apache.commons.dbcp2.BasicDataSource" destroy-method="close">
+		<property name="driverClassName" value="${driverClassName}" />
+    	<property name="url" value="${url}" />
+    	<property name="username" value="${user}" />
+    	<property name="password" value="${password}" />
+		<!--提交状态  -->
+		<property name="defaultAutoCommit" value="true"/>
+		<!--初始化的创建的连接个数-->
+		<property name="initialSize" value="10"/>
+		<!--保持空闲的最小连接数-->
+		<property name="minIdle" value="10"/>
+		<!--保持空闲的最大连接数-->
+		<property name="maxIdle" value="100"/>
+		<!--有效连接数的最大值-->
+		<property name="maxTotal" value="100"/>
+		<!--被归还的最大毫秒数-->
+		<property name="maxWaitMillis" value="3000"/>
+		<!--超时时间-->
+		<property name="removeAbandonedTimeout" value="180"/>
+		<property name="validationQuery" value="SELECT 1 FROM DUAL"/>
+		<property name="testOnBorrow" value="true"/>
+	</bean>
+	
+	<!-- jdbc模板配置-->
+    <bean id="jdbcTemplate" class="org.springframework.jdbc.core.JdbcTemplate" abstract="false" lazy-init="false" autowire="default">
+        <property name="dataSource">
+            <ref bean="dataSourceBean" />
+        </property>
+    </bean>
+	
+	<!-- 声明由Spring提供的Hibernate -->
+	<bean id="sessionFactory" class="org.springframework.orm.hibernate4.LocalSessionFactoryBean">
+		<property name="dataSource" ref="dataSourceBean"/>
+		<property name="hibernateProperties">
+ 		<props>
+ 		 	<prop key="hibernate.format_sql">false</prop>
+ 		 	<prop key="hibernate.show_sql">false</prop>
+ 		 	<prop key="hibernate.dialect">com.fast.tools.MyDialect</prop>
+ 		 	<prop key="hibernate.connection.release_mode">auto</prop>
+ 		 	<prop key="hibernate.autoReconnect">true</prop>
+ 		 	<prop key="hibernate.cache.use_second_level_cache">false</prop>
+ 		 	<prop key="hibernate.cache.use_query_cache">false</prop>
+ 		 	<prop key="hibernate.jdbc.fetch_size">2000</prop>
+ 		 	<prop key="hibernate.jdbc.batch_size">2000</prop>
+ 		 	<prop key="hibernate.connection.autocommit">true</prop>
+			<prop key="hibernate.current_session_context_class">org.springframework.orm.hibernate4.SpringSessionContext</prop>
+			<prop key="javax.persistence.validation.mode">none</prop>
+			
+ 		</props>
+ 		</property>
+		<property name="mappingResources">
+		<list>
+			<value>com/beyond/pojo/BeyondUser.hbm.xml</value>
+		</list>
+		</property>
+	</bean>
+	
+	<bean id="openSessionInViewInterceptor" class="org.springframework.orm.hibernate4.support.OpenSessionInViewInterceptor">
+		<property name="sessionFactory" ref="sessionFactory" />
+	</bean>
+	
+	<!-- 定义事务管理器（声明式的事务） --> 
+	<bean id="transactionManager" class="org.springframework.orm.hibernate4.HibernateTransactionManager">
+		<property name="sessionFactory" ref="sessionFactory"></property>
+		<property name="dataSource"><ref bean="dataSourceBean"/></property>
+	</bean>
+	<!-- 定义 Autowired  自动注入 bean -->
+	<bean class="org.springframework.beans.factory.annotation.AutowiredAnnotationBeanPostProcessor"/>
+	<!-- 声明由Spring提供的Hibernate事务管理器——就是一个切面Bean -->
+	<bean id="txManagerBean" class="org.springframework.orm.hibernate4.HibernateTransactionManager">
+		<property name="sessionFactory" ref="sessionFactory"/>
+	</bean>
+	
+	<tx:annotation-driven transaction-manager="txManagerBean"/>
+	<!-- 声明管理事务的advice——无需指定执行方法，只需要指定事务管理器即可 -->
+	<tx:advice id="txManagerAdvice" transaction-manager="txManagerBean">
+		<tx:attributes>
+			<tx:method name="exists" read-only="true"/>
+			<tx:method name="query*" read-only="true" />
+			<tx:method name="get*" read-only="true" />
+			<tx:method name="add*" propagation="REQUIRED" rollback-for="java.lang.Exception"/>
+	        <tx:method name="save*" propagation="REQUIRED" rollback-for="java.lang.Exception"/>
+	        <tx:method name="update*" propagation="REQUIRED" rollback-for="java.lang.Exception"/>
+	        <tx:method name="del*" propagation="REQUIRED" rollback-for="java.lang.Exception"/>
+	        <tx:method name="logout" propagation="REQUIRED" isolation="SERIALIZABLE" rollback-for="java.lang.Exception"/>
+	        <tx:method name="*" read-only="true" />
+		</tx:attributes>
+	</tx:advice>
+	
+	<aop:config>
+		<aop:pointcut id="allModelMethod" expression="execution(* com.fast.service.*.*(..))" />
+		<!-- 使用advisor代替aspect -->
+		<aop:advisor advice-ref="txManagerAdvice" pointcut-ref="allModelMethod"/>
+	</aop:config>
+	
+	<!-- 配置DAO -->
+	<bean id="baseDao" class="com.fast.dao.impl.BaseDao">
+		<property name="sessionFactory" ref="sessionFactory"/>
+	</bean>
+	
+	<!-- 公告 -->
+	<bean id="noticeAction" class="com.fast.action.NiNoticeAction">
+		<property name="noticeService" ref="noticeService"/>
+	</bean>
+	<bean id="noticeService" class="com.fast.service.impl.NiNoticeServiceImpl">
+		<property name="noticeDao" ref="noticeDao"/>
+	</bean> 
+	<bean id="noticeDao" class="com.fast.dao.impl.NiNoticeDaoImpl">
+		<property name="sessionFactory" ref="sessionFactory"></property>
+	</bean> 
+	
+	<!-- 登录 -->
+	<bean id="checkLoginDao" class="com.fast.dao.impl.CheckLoginDaoImpl">
+		<property name="sessionFactory" ref="sessionFactory"></property>
+	</bean>
+	<bean id="checkLoginService" class="com.fast.service.impl.CheckLoginServiceImpl">
+		<property name="checkLoginDao" ref="checkLoginDao"/>
+	</bean>
+	<bean id="checkLoginAction" class="com.fast.action.CheckLoginAction" scope="prototype">
+		<property name="service" ref="checkLoginService"/>
+	</bean>
+	
+	<!-- 系统日志 -->
+	<bean id="niSysLogsDao" class="com.fast.dao.impl.NiSysLogsDaoImpl">
+	</bean>
+	<bean id="niSysLogsService" class="com.fast.service.impl.NiSysLogsServiceImpl">
+		<property name="niSysLogsDao" ref="niSysLogsDao"></property>
+	</bean>
+	<bean id="niSysLogsAction" class="com.fast.action.NiSysLogsAction" scope="prototype">
+		<property name="niSysLogsService" ref="niSysLogsService"></property>
+	</bean>
+	
+	<!-- 用户管理 -->
+	<bean id="userManageDao" class="com.fast.dao.impl.UserManageDaoImpl">
+		<property name="sessionFactory" ref="sessionFactory"/>
+	</bean>
+	<bean id="userManageService" class="com.fast.service.impl.UserManageServiceImpl">
+		 <property name="userManageDao" ref="userManageDao"></property>
+	</bean>
+	<bean id="userManageAction" class="com.fast.action.UserManageAction" scope="prototype">
+		<property name="userManageService" ref="userManageService"></property>
+	</bean>
+	
+	<!-- 任务管理 -->
+	<bean id="taskManageDao" class="com.fast.dao.impl.TaskManageDaoImpl">
+	</bean>
+	<bean id="taskManageService" class="com.fast.service.impl.TaskManageServiceImpl">
+		<property name="taskManageDao" ref="taskManageDao"/>
+	</bean>
+	<bean id="taskManageAction" class="com.fast.action.TaskManageAction" scope="prototype">
+		<property name="taskManageService" ref="taskManageService"/>
+	</bean>
+	
+	<!-- 核查管理 -->
+	<bean id="checkManageDao" class="com.fast.dao.impl.CheckManageDaoImpl">
+	</bean>
+	<bean id="checkManageService" class="com.fast.service.impl.CheckManageServiceImpl">
+		<property name="checkManageDao" ref="checkManageDao"/>
+	</bean>
+	<bean id="checkManageAction" class="com.fast.action.CheckManageAction" scope="prototype">
+		<property name="checkManageService" ref="checkManageService"/>
+	</bean>
+	
+	<!-- 文件上传  -->
+	<bean id="filesUploadDao" class="com.fast.dao.impl.FilesUploadDaoImpl">
+	</bean>
+	<bean id="filesUploadService" class="com.fast.service.impl.FilesUploadServiceImpl">
+		<property name="filesUploadDao" ref="filesUploadDao"/>
+	</bean>
+	<bean id="filesUploadAction" class="com.fast.action.FilesUploadAction" scope="prototype">
+	    <property name="filesUploadService" ref="filesUploadService"/>
+	</bean>
+	
+</beans>
